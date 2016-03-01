@@ -28,6 +28,7 @@ export default class DHTSpider {
     this.udp = dgram.createSocket('udp4');
     this.ktable = new KTable(options.nodesMaxSize || NODES_MAX_SIZE);
     this.bootstrapNodes = options.bootstrapNodes || BOOTSTRAP_NODES;
+    this.interval = options.interval || 1000;
   }
 
   sendKRPC(msg, rinfo = {}){
@@ -177,7 +178,7 @@ export default class DHTSpider {
     setInterval(() => {
       this.joinDHTNetwork();
       this.makeNeighbours();
-    }, 1000);
+    }, this.interval);
   }
   
   static start(options){
