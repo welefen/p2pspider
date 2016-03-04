@@ -2,9 +2,9 @@
 
 import net from 'net';
 import EventEmitter from 'events';
-import LRU from 'lru';
 import Wire from './wire';
 import utils from './utils';
+import thinkit from 'thinkit';
 
 export default class BTClient extends EventEmitter {
   /**
@@ -15,14 +15,6 @@ export default class BTClient extends EventEmitter {
   constructor(options = {}){
     super();
     this.timeout = options.timeout || 5000;
-    this.lru = LRU({
-      max: 100000, 
-      maxAge: 1000 * 60 * 10
-    });
-    //最大同时连接的 sockets
-    this.maxConnectingSockets = options.maxConnectingSockets || 20;
-    //正在连接的 sockets 
-    this.connectingSockets = {};
   }
   /**
    * format meta data
@@ -79,33 +71,22 @@ export default class BTClient extends EventEmitter {
    * download
    * @param  {Object} rinfo    [description]
    * @param  {[type]} infohash [description]
-   * @return {[type]}          [description]
+   * @return {Promise}          [description]
    */
   download(rinfo = {}, infohash){
-    let infoHashHex = infohash.toString('hex');
 
-    if(Object.keys(this.connectingSockets).length >= this.maxConnectingSockets){
-      return;
-    }
-
-    if (this.lru.get(infoHashHex) ) {
-      return;
-    }
-    this.lru.set(infoHashHex, true);
-    
-    
+    let deferred = thinkit.defer();
     let socket = new net.Socket();
 
     socket.setTimeout(this.timeout);
 
-    this.connectingSockets[infoHashHex] = true;
-
     socket.connect(rinfo.port, rinfo.address, () => {
+      
       let wire = new Wire(infohash);
       socket.pipe(wire).pipe(socket);
+
       wire.on('metadata', (metadata, infoHash) => {
-        delete this.connectingSockets[infoHashHex];
-        //destroy socket when get metadata
+        deferred.resolve();
         socket.destroy();
 
         metadata = this.formatMetaData(metadata);
@@ -114,27 +95,28 @@ export default class BTClient extends EventEmitter {
         }
         this.emit('complete', metadata, infoHash, rinfo);
       });
+
       wire.sendHandshake();
     });
     
     socket.on('error', () => {
-      delete this.connectingSockets[infoHashHex];
-      socket.destroy();
+      deferred.reject();
     });
     
     socket.on('timeout', () => {
-      delete this.connectingSockets[infoHashHex];
       socket.destroy();
+      deferred.reject();
     });
 
     socket.on('close', () => {
-      delete this.connectingSockets[infoHashHex];
-      socket.destroy();
+      deferred.resolve();
     });
 
     socket.on('end', () => {
-      delete this.connectingSockets[infoHashHex];
-      socket.destroy();
+      deferred.resolve();
     });
+
+    return deferred.promise;
   }
+
 }

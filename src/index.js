@@ -10,8 +10,7 @@ export default (options = {}, callback) => {
   }
 
   let btclient = new BTClient({
-    timeout: options.timeout,
-    maxConnectingSockets: options.maxConnectingSockets
+    timeout: options.timeout
   });
 
   btclient.on('complete', (metadata, infohash, rinfo) => {
@@ -32,8 +31,7 @@ export default (options = {}, callback) => {
     btclient: btclient,
     address: options.address,
     port: options.port,
-    interval: options.interval,
-    nodesMaxSize: options.nodesMaxSize  // 值越大, 网络, 内存, CPU 消耗就越大, 收集速度会变慢.
+    maxConnectingSockets: options.maxConnectingSockets
   });
 };
 

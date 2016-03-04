@@ -3,7 +3,7 @@
 import dgram from 'dgram';
 import bencode from 'bencode';
 import utils from './utils';
-import KTable from './ktable';
+import parallelLimit from './parallel_limit';
 
 const BOOTSTRAP_NODES = [
   ['router.bittorrent.com', 6881],
@@ -11,7 +11,6 @@ const BOOTSTRAP_NODES = [
 ];
 
 const TID_LENGTH = 4;
-const NODES_MAX_SIZE = 1000;
 const TOKEN_LENGTH = 2;
 
 
@@ -26,9 +25,11 @@ export default class DHTSpider {
     this.address = options.address || '0.0.0.0';
     this.port = options.port || 6219;
     this.udp = dgram.createSocket('udp4');
-    this.ktable = new KTable(options.nodesMaxSize || NODES_MAX_SIZE);
     this.bootstrapNodes = options.bootstrapNodes || BOOTSTRAP_NODES;
-    this.interval = options.interval || 1000;
+    this.bootstrapIndex = 0;
+    this.maxConnectingSockets = options.maxConnectingSockets || 20;
+    this.parallelLimit = new parallelLimit(this.maxConnectingSockets);
+    this.nid = utils.randomID();
   }
 
   sendKRPC(msg, rinfo = {}){
@@ -42,15 +43,15 @@ export default class DHTSpider {
   onFindNodeResponse(nodes){
     nodes = utils.decodeNodes(nodes);
     nodes.forEach(node => {
-      if (node.address !== this.address && node.nid !== this.ktable.nid
+      if (node.address !== this.address && node.nid !== this.nid
         && node.port < 65536 && node.port > 0) {
-        this.ktable.push(node);
+        this.makeNeighbours(node);
       }
     });
   }
 
   sendFindNodeRequest(rinfo, nid){
-    let _nid = nid !== undefined ? utils.genNeighborID(nid, this.ktable.nid) : this.ktable.nid;
+    let _nid = nid !== undefined ? utils.genNeighborID(nid, this.nid) : this.nid;
     let msg = {
       t: utils.randomID().slice(0, TID_LENGTH),
       y: 'q',
@@ -64,22 +65,19 @@ export default class DHTSpider {
   }
 
   joinDHTNetwork(){
-    this.bootstrapNodes.forEach(node => {
-      this.sendFindNodeRequest({
-        address: node[0], 
-        port: node[1]
-      });
+    this.bootstrapIndex = 1 - this.bootstrapIndex;
+    let node = this.bootstrapNodes[this.bootstrapIndex];
+    this.sendFindNodeRequest({
+      address: node[0], 
+      port: node[1]
     });
   }
 
-  makeNeighbours(){
-    this.ktable.nodes.forEach(node => {
-      this.sendFindNodeRequest({
-        address: node.address,
-        port: node.port
-      }, node.nid);
-    });
-    this.ktable.nodes = [];
+  makeNeighbours(node){
+    this.sendFindNodeRequest({
+      address: node.address,
+      port: node.port
+    }, node.nid);
   }
 
   onGetPeersRequest(msg, rinfo){
@@ -96,7 +94,7 @@ export default class DHTSpider {
       t: tid,
       y: 'r',
       r: {
-        id: utils.genNeighborID(infohash, this.ktable.nid),
+        id: utils.genNeighborID(infohash, this.nid),
         nodes: '',
         token: token
       }
@@ -128,19 +126,23 @@ export default class DHTSpider {
     if (port >= 65536 || port <= 0) {
       return;
     }
-    
-    this.sendKRPC({
-      t: tid,
-      y: 'r',
-      r: {
-        id: utils.genNeighborID(nid, this.ktable.nid)
-      }
-    }, rinfo);
-    
-    this.btclient.download({
-      address: rinfo.address, 
-      port: port
-    }, infohash);
+
+    if(this.parallelLimit.getRemainLength() < this.maxConnectingSockets * 2){
+      this.sendKRPC({
+        t: tid,
+        y: 'r',
+        r: {
+          id: utils.genNeighborID(nid, this.nid)
+        }
+      }, rinfo);
+    }
+
+    return this.parallelLimit.add(() => {
+      return this.btclient.download({
+        address: rinfo.address, 
+        port: port
+      }, infohash).catch(() => {});
+    });
   }
 
   onMessage(msg, rinfo){
@@ -160,6 +162,16 @@ export default class DHTSpider {
     }
   }
 
+  join(){
+    setTimeout(() => {
+      let length = this.parallelLimit.getRemainLength();
+      if(length < this.maxConnectingSockets){
+        this.joinDHTNetwork();
+      }
+      this.join();
+    }, 1000);
+  }
+
   start(){
     this.udp.bind(this.port, this.address);
 
@@ -175,10 +187,7 @@ export default class DHTSpider {
       console.log('error', err.stack);
     });
 
-    setInterval(() => {
-      this.joinDHTNetwork();
-      this.makeNeighbours();
-    }, this.interval);
+    this.join();
   }
   
   static start(options){

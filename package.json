@@ -22,7 +22,8 @@
     "bitfield": "^1.1.2",
     "iconv-lite": "^0.4.13",
     "is-utf8": "^0.2.1",
-    "lru": "^2.0.0"
+    "lru": "^2.0.0",
+    "thinkit": "^4.7.0"
   },
   "devDependencies": {
     "babel-cli": "6.3.17",
