@@ -22,9 +22,9 @@ export default class DHTSpider {
    * @return {[type]}         [description]
    */
   constructor(options = {}){
-    this.btclient = options.btclient;
-    this.address = options.address;
-    this.port = options.port;
+    this.btclient = options.btclient; //btclient instance
+    this.address = options.address || '0.0.0.0';
+    this.port = options.port || 6219;
     this.udp = dgram.createSocket('udp4');
     this.ktable = new KTable(options.nodesMaxSize || NODES_MAX_SIZE);
     this.bootstrapNodes = options.bootstrapNodes || BOOTSTRAP_NODES;

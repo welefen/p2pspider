@@ -1,5 +1,5 @@
 
-import DHTSpider from './dht';
+import DHTSpider from './dhtspider';
 import BTClient from './btclient';
 
 export default (options = {}, callback) => {
@@ -9,7 +9,10 @@ export default (options = {}, callback) => {
     options = {};
   }
 
-  let btclient = new BTClient({ timeout: options.options || 1000 * 10 });
+  let btclient = new BTClient({
+    timeout: options.timeout,
+    maxConnectingSockets: options.maxConnectingSockets
+  });
 
   btclient.on('complete', (metadata, infohash, rinfo) => {
     let data = metadata;
@@ -27,10 +30,10 @@ export default (options = {}, callback) => {
 
   DHTSpider.start({
     btclient: btclient,
-    address: '0.0.0.0',
-    port: options.port || 6219,
+    address: options.address,
+    port: options.port,
     interval: options.interval,
-    nodesMaxSize: options.nodesMaxSize || 4000  // 值越大, 网络, 内存, CPU 消耗就越大, 收集速度会变慢.
+    nodesMaxSize: options.nodesMaxSize  // 值越大, 网络, 内存, CPU 消耗就越大, 收集速度会变慢.
   });
 };
 

@@ -19,6 +19,10 @@ export default class BTClient extends EventEmitter {
       max: 100000, 
       maxAge: 1000 * 60 * 10
     });
+    //最大同时连接的 sockets
+    this.maxConnectingSockets = options.maxConnectingSockets || 20;
+    //正在连接的 sockets 
+    this.connectingSockets = {};
   }
   /**
    * format meta data
@@ -79,19 +83,28 @@ export default class BTClient extends EventEmitter {
    */
   download(rinfo = {}, infohash){
     let infoHashHex = infohash.toString('hex');
+
+    if(Object.keys(this.connectingSockets).length >= this.maxConnectingSockets){
+      return;
+    }
+
     if (this.lru.get(infoHashHex) ) {
       return;
     }
     this.lru.set(infoHashHex, true);
     
+    
     let socket = new net.Socket();
 
     socket.setTimeout(this.timeout);
+
+    this.connectingSockets[infoHashHex] = true;
 
     socket.connect(rinfo.port, rinfo.address, () => {
       let wire = new Wire(infohash);
       socket.pipe(wire).pipe(socket);
       wire.on('metadata', (metadata, infoHash) => {
+        delete this.connectingSockets[infoHashHex];
         //destroy socket when get metadata
         socket.destroy();
 
@@ -105,10 +118,22 @@ export default class BTClient extends EventEmitter {
     });
     
     socket.on('error', () => {
+      delete this.connectingSockets[infoHashHex];
       socket.destroy();
     });
     
     socket.on('timeout', () => {
+      delete this.connectingSockets[infoHashHex];
+      socket.destroy();
+    });
+
+    socket.on('close', () => {
+      delete this.connectingSockets[infoHashHex];
+      socket.destroy();
+    });
+
+    socket.on('end', () => {
+      delete this.connectingSockets[infoHashHex];
       socket.destroy();
     });
   }
